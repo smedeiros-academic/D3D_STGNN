@@ -1,0 +1,31 @@
+name: d3d-stgnn
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+
+  # Core PyTorch
+  - pytorch=2.2.*
+  # - pytorch-cuda=11.8  # Uncomment if you have an NVIDIA GPU with CUDA 11.8
+  - torchvision
+  - torchaudio
+
+  # Scientific stack
+  - numpy
+  - pandas
+  - matplotlib
+  - scipy
+  - scikit-learn
+  - jupyterlab
+
+  # Graph neural networks (install via pip)
+#  - pip:
+#      - torch-geometric==2.5.3
+#      - torch-scatter==2.1.2
+#      - torch-sparse==0.6.18
+#      - torch-cluster==1.6.3
+#      - torch-spline-conv==1.2.2
+

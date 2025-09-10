@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pkl
+*.h5
+
+# Conda / virtual envs
+.env
+.venv
+env/
+venv/
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints
+*.ipynb~
+
+# Data / outputs
+*.csv
+*.tsv
+*.dat
+*.npy
+*.npz
+*.pth
+*.pt
+*.pkl
+*.h5
+*.hdf5
+*.log
+
+# System files
+.DS_Store
+Thumbs.db
+
+# VSCode / IDE settings
+.vscode/
+.idea/
+
+# Build / packaging
+build/
+dist/
+.eggs/
