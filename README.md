@@ -57,6 +57,12 @@ Expected output:
 
 ## 📓 Running the Notebook
 
+You may need to ensure that Jupyter is able to run PyTorch. To do this, the kernel used by the conda env must be selectable in Jupyter. To do that, run:
+
+```bash
+python -m ipykernel install --user --name=d3d-stgnn --display-name "Python (d3d-stgnn)"
+```
+
 Launch Jupyter Lab and open the notebook:
 
 ```bash
