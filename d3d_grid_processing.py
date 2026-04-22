@@ -96,6 +96,59 @@ VAR_ALIASES: Dict[str, List[str]] = {
 # Utility Functions
 # =============================================================================
 
+def resolve_input_to_netcdf(input_path: Path, outdir: Path, allow_convert: bool) -> Path:
+    """
+    Resolve --input into a readable dataset for xarray.
+
+    Accepts:
+      - a NetCDF file (*.nc)
+      - a Zarr directory (*.zarr)
+      - a directory containing either:
+          * a NetCDF file (trim*.nc), OR
+          * a NEFIS trim*.dat (with matching .def), which we can convert (if allow_convert=True)
+
+    Returns:
+      Path to NetCDF file or Zarr store.
+    """
+    input_path = input_path.expanduser().resolve()
+
+    # 1) Direct NetCDF file
+    if input_path.is_file() and input_path.suffix.lower() == ".nc":
+        return input_path
+
+    # 2) Direct Zarr store
+    if input_path.is_dir() and input_path.suffix.lower() == ".zarr":
+        return input_path
+
+    # 3) Directory: search for candidates
+    if input_path.is_dir():
+        # Prefer NetCDF first
+        nc_candidates = sorted(input_path.glob("**/trim-*.nc")) + sorted(input_path.glob("**/*trim*.nc"))
+        if nc_candidates:
+            return nc_candidates[0]
+
+        # Otherwise look for NEFIS trim
+        nefis_candidates = sorted(input_path.glob("**/trim-*.dat")) + sorted(input_path.glob("**/*trim*.dat"))
+        if nefis_candidates:
+            trim_dat = nefis_candidates[0]
+            if not allow_convert:
+                raise SystemExit(
+                    f"Found NEFIS file {trim_dat} but conversion is disabled. "
+                    f"Re-run with --convert or provide a NetCDF .nc."
+                )
+            out_nc = outdir / (trim_dat.stem + ".nc")
+            return maybe_convert_nefis(trim_dat, out_nc)
+
+    # 4) Direct NEFIS file
+    if input_path.is_file() and input_path.suffix.lower() == ".dat":
+        if not allow_convert:
+            raise SystemExit("Input is NEFIS .dat. Re-run with --convert or provide NetCDF.")
+        out_nc = outdir / (input_path.stem + ".nc")
+        return maybe_convert_nefis(input_path, out_nc)
+
+    raise SystemExit(f"Could not resolve input: {input_path}")
+
+
 def find_var(ds: xr.Dataset, canonical: str) -> Optional[str]:
     """
     Identify the actual dataset variable name corresponding to a canonical name.
@@ -228,6 +281,9 @@ def main():
                         help="Temporal downsampling interval")
     parser.add_argument("--float32", action="store_true",
                         help="Store tensors as float32 (recommended)")
+    parser.add_argument("--convert", action="store_true",
+                    help="If input is NEFIS (.dat/.def) or directory containing NEFIS, attempt conversion to NetCDF.")
+
     args = parser.parse_args()
 
     input_path = Path(args.input)
@@ -239,7 +295,12 @@ def main():
     # -------------------------------------------------------------------------
 
     print("Opening dataset...")
-    ds = xr.open_dataset(input_path)
+    resolved = resolve_input_to_netcdf(input_path, outdir, allow_convert=args.convert)
+
+    if resolved.is_dir() and resolved.suffix.lower() == ".zarr":
+        ds = xr.open_zarr(resolved)
+    else:
+        ds = xr.open_dataset(resolved)
 
     # -------------------------------------------------------------------------
     # Variable Mapping

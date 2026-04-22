@@ -1,34 +1,78 @@
-# Spatio-Temporal Graph Neural Network (ST-GNN) Demo
+# Delft3D to Graph-ML Preprocessing Demo
 
-This project demonstrates how to build and train a **Spatio-Temporal Graph Neural Network (ST-GNN)** using [PyTorch Geometric](https://pytorch-geometric.readthedocs.io) and LSTMs.  
-The use case is predicting **erosion/accretion (Δz_bed)** at mesh nodes based on time-series forcing (waves, currents, wind).
+This repository is a lightweight prototype for coastal morphodynamics / hydrodynamics machine-learning workflows.
 
----
+Its main purpose is to:
 
-## 📂 Project Files
+- extract Delft3D-FLOW outputs into graph-ready tensors;
+- build structured-grid connectivity for use with graph neural network tooling such as [PyTorch Geometric](https://pytorch-geometric.readthedocs.io);
+- provide a small notebook with synthetic data generation and visualization;
+- verify that the PyTorch Geometric install is working.
 
-- `environment.yml`  
-  Conda environment specification (pins `numpy<2` for compatibility).  
+It is not currently a full end-to-end ST-GNN training package.
 
-- `pytorch_geometric_sanity_check.py`  
-  Standalone Python script to verify that PyTorch and PyTorch Geometric are installed correctly.  
+## Project Files
 
-- `stgnn_core.ipynb`  
-  Jupyter Notebook containing the ST-GNN model definition and a dummy training loop.  
-  (Sanity check cells have been moved to the standalone script.)
+- `d3d_grid_processing.py`
+  Main preprocessing script. Reads Delft3D-FLOW outputs, detects relevant variables, constructs a valid-node mask and neighbor graph, and writes ML-ready arrays.
 
----
+- `stgnn_core.ipynb`
+  Notebook for synthetic spatiotemporal data generation, train/test tensor creation, and visualization/export of bed-elevation animations.
 
-## 🔧 Setup Instructions
+- `pytorch_geometric_sanity_check.py`
+  Standalone install check for PyTorch and PyTorch Geometric using a tiny triangle graph and a simple `GCNConv`.
 
-### 1. Create the Conda Environment
+- `sanity-check.sh`
+  Convenience wrapper for running the PyG sanity check without plotting.
+
+- `environment.yml`
+  Conda environment specification for Python, scientific IO, plotting, and PyTorch.
+
+- `test_bed_elevations.mp4`
+  Example animation exported from the notebook.
+
+## What the Preprocessing Script Produces
+
+`d3d_grid_processing.py` extracts canonical Delft3D variables when available:
+
+- `ZB`: bed level
+- `S1`: water level
+- `U1`: depth-averaged x-velocity
+- `V1`: depth-averaged y-velocity
+- `TAUB`: bed shear stress
+
+Given an input dataset, it produces:
+
+1. `features.npz`
+   Contains:
+   - `X` with shape `(T, N, F)`
+   - `Y` with shape `(T, N)`
+
+2. `edge_index.npy`
+   Graph connectivity in COO format `(2, E)`.
+
+3. `node_index.npy`
+   Grid coordinates for each valid node `(N, 2)`.
+
+4. `meta.json`
+   Basic metadata including dimensions and selected features.
+
+The graph is built from valid cells on a structured 2D grid using 4-neighbor connectivity by default.
+
+## Setup
+
+### 1. Create the conda environment
+
 ```bash
 conda env create -f environment.yml
-conda activate stgnn-env
+conda activate d3d-stgnn
 ```
 
-### 2. Install PyTorch Geometric (CPU-only example)
-Inside the environment, run these one at a time:
+### 2. Install PyTorch Geometric
+
+`environment.yml` installs PyTorch, but PyTorch Geometric is installed separately.
+
+Example CPU-only installation:
 
 ```bash
 pip install torch-scatter -f https://data.pyg.org/whl/torch-2.2.0+cpu.html
@@ -38,54 +82,88 @@ pip install torch-spline-conv -f https://data.pyg.org/whl/torch-2.2.0+cpu.html
 pip install torch-geometric
 ```
 
----
+Adjust wheel URLs as needed to match your installed PyTorch version and platform.
 
-## ✅ Sanity Check
+## Sanity Check
 
-Run the standalone script to confirm everything works:
+Run:
 
 ```bash
 python pytorch_geometric_sanity_check.py
 ```
 
-Expected output:
-- Prints PyTorch and PyTorch Geometric versions.  
-- Runs a GCN on a tiny 3-node triangle graph.  
-- Displays a matplotlib visualization (unless you add `--no-plot`).  
+Or headless:
 
----
+```bash
+bash sanity-check.sh
+```
 
-## 📓 Running the Notebook
+Expected behavior:
 
-You may need to ensure that Jupyter is able to run PyTorch. To do this, the kernel used by the conda env must be selectable in Jupyter. To do that, run:
+- prints PyTorch and PyTorch Geometric versions;
+- runs a small graph convolution on a 3-node graph;
+- optionally plots the graph if `--no-plot` is not used.
+
+## Running the Delft3D Preprocessing
+
+Basic example:
+
+```bash
+python d3d_grid_processing.py --input /path/to/model/output.nc --outdir ./processed
+```
+
+Useful options:
+
+- `--every N`
+  Temporal downsampling interval.
+
+- `--float32`
+  Store arrays as `float32` instead of `float64`.
+
+- `--convert`
+  Attempt NEFIS-to-NetCDF conversion when the input is a Delft3D `.dat/.def` pair or a directory containing one.
+
+The script accepts:
+
+- a NetCDF file (`.nc`);
+- a Zarr store (`.zarr`);
+- a directory containing Delft3D outputs;
+- a NEFIS `.dat` file when `--convert` is enabled.
+
+## Running the Notebook
+
+Install a Jupyter kernel if needed:
 
 ```bash
 python -m ipykernel install --user --name=d3d-stgnn --display-name "Python (d3d-stgnn)"
 ```
 
-Launch Jupyter Lab and open the notebook:
+Then launch Jupyter:
 
 ```bash
 jupyter lab
 ```
 
-Then open **`stgnn_core.ipynb`**.  
-It includes:
-- ST-GNN model definition (GAT + GCN + LSTM + regression head).  
-- Dummy time-series dataset on a toy graph.  
-- Training loop with loss reporting.  
+Open `stgnn_core.ipynb`.
 
----
+Current notebook contents:
 
-## ⚠️ Notes
+- synthetic wind / water / shear / sediment-feature generation on a regular grid;
+- synthetic bed-elevation target generation over time;
+- train/test tensor preparation;
+- animated visualization and export of bed-elevation fields.
 
-- **NumPy**: The environment pins `numpy<2` because PyTorch and PyG wheels are not yet fully compatible with NumPy 2.x.  
-- **GPU**: The environment is CPU-only by default. If you run on an NVIDIA GPU with CUDA 11.8, uncomment the `pytorch-cuda=11.8` line in `environment.yml`.  
-- **Mesh data**: Replace the dummy data in the notebook with real forcing and bed-change data (e.g., ADCIRC/XBeach outputs).  
+## Current Scope and Limitations
 
----
+- The repository includes graph-ready preprocessing, but does not currently contain a completed ST-GNN training pipeline.
+- The notebook is a synthetic-data prototype, not a production training workflow on real Delft3D outputs.
+- `d3d_grid_processing.py` assumes a structured 2D grid and uses heuristic variable-name matching.
+- If velocity variables are staggered in the source model output, interpolation to cell centers may still be needed before model training.
+- NEFIS conversion is optional and depends on external tooling being available.
 
-## 📝 Citation
-If you use this workflow in research, you can cite:  
-- PyTorch: *Paszke et al., 2019*  
-- PyTorch Geometric: *Fey & Lenssen, 2019*  
+## Citation
+
+If you use this workflow in research, consider citing:
+
+- PyTorch: Paszke et al., 2019
+- PyTorch Geometric: Fey and Lenssen, 2019

@@ -1,4 +1,5 @@
 DATA/
+OUTPUT/
 
 # Python
 __pycache__/
