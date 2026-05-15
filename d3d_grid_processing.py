@@ -58,7 +58,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
+import shlex
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -81,20 +82,88 @@ Delft3D variable naming varies across:
 We define canonical names and map aliases to improve robustness.
 """
 
-CANONICAL_VARS = ["ZB", "S1", "U1", "V1", "TAUB"]
+CANONICAL_VARS = ["ZB", "S1", "U1", "V1", "TAUB", "TAUKSI", "TAUETA"]
 
 VAR_ALIASES: Dict[str, List[str]] = {
-    "ZB":   ["ZB", "zb", "bedlevel", "bed_level", "BedLevel"],
-    "S1":   ["S1", "s1", "waterlevel", "WaterLevel", "eta"],
-    "U1":   ["U1", "u1", "U", "ucx"],
-    "V1":   ["V1", "v1", "V", "ucy"],
-    "TAUB": ["TAUB", "taub", "tau_b", "TAU"],
+    "ZB":     ["ZB", "zb", "bedlevel", "bed_level", "BedLevel"],
+    "S1":     ["S1", "s1", "waterlevel", "WaterLevel", "eta"],
+    "U1":     ["U1", "u1", "U", "ucx"],
+    "V1":     ["V1", "v1", "V", "ucy"],
+    "TAUB": ["TAUMAX", "taumax", "TAUB", "taub", "tau_b", "TAU"],
+    "TAUKSI": ["TAUKSI", "tauksi", "tau_ksi", "TAUX", "taux"],
+    "TAUETA": ["TAUETA", "taueta", "tau_eta", "TAUY", "tauy"],
 }
 
 
 # =============================================================================
 # Utility Functions
 # =============================================================================
+
+def maybe_convert_nefis(trim_dat: Path, out_nc: Path) -> Path:
+    """
+    Convert a Delft3D NEFIS trim file to NetCDF using an external converter.
+
+    The conversion step is intentionally explicit because converter availability
+    differs across Delft3D installations. This helper supports two modes:
+
+    1. Set D3D_NEFIS_CONVERTER to a command prefix that accepts:
+           <input_trim.dat> <output.nc>
+       Example:
+           export D3D_NEFIS_CONVERTER="python tools/convert_nefis.py"
+
+    2. Install a converter executable named one of:
+           d3d-nefis-to-netcdf
+           vs_trim2nc
+           trim2nc
+
+    Returns:
+        Path to the converted NetCDF file.
+    """
+    trim_dat = trim_dat.expanduser().resolve()
+    out_nc = out_nc.expanduser().resolve()
+    def_file = trim_dat.with_suffix(".def")
+
+    if not trim_dat.exists():
+        raise SystemExit(f"NEFIS data file not found: {trim_dat}")
+    if not def_file.exists():
+        raise SystemExit(
+            f"NEFIS definition file not found for {trim_dat.name}: expected {def_file.name}"
+        )
+    if out_nc.exists():
+        return out_nc
+
+    converter_cmd = os.environ.get("D3D_NEFIS_CONVERTER")
+    if converter_cmd:
+        cmd = shlex.split(converter_cmd) + [str(trim_dat), str(out_nc)]
+    else:
+        candidates = ["d3d-nefis-to-netcdf", "vs_trim2nc", "trim2nc"]
+        executable = next((name for name in candidates if shutil.which(name)), None)
+        if executable is None:
+            raise SystemExit(
+                "NEFIS conversion was requested, but no converter is configured. "
+                "Set D3D_NEFIS_CONVERTER to a converter command or install one of: "
+                f"{', '.join(candidates)}"
+            )
+        cmd = [executable, str(trim_dat), str(out_nc)]
+
+    print(f"Converting NEFIS to NetCDF: {' '.join(cmd)}")
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        stderr = result.stderr.strip() or "(no stderr output)"
+        raise SystemExit(
+            "NEFIS conversion failed.\n"
+            f"Command: {' '.join(cmd)}\n"
+            f"stderr: {stderr}"
+        )
+    if not out_nc.exists():
+        raise SystemExit(
+            "NEFIS converter reported success, but the expected NetCDF output was not created: "
+            f"{out_nc}"
+        )
+
+    return out_nc
+
+
 
 def resolve_input_to_netcdf(input_path: Path, outdir: Path, allow_convert: bool) -> Path:
     """
@@ -351,7 +420,9 @@ def main():
 
     T = ds.dims[time_dim]
     N = node_index.shape[0]
-    F = len(var_map)
+
+    feature_names = list(var_map.keys())
+    F = len(feature_names)
 
     dtype = np.float32 if args.float32 else np.float64
     X = np.empty((T, N, F), dtype=dtype)
@@ -364,7 +435,9 @@ def main():
         arr = da.values
         X[:,:,f_idx] = arr[:, mask]
 
-    Y = ds[var_map["ZB"]].transpose(time_dim, m_dim, n_dim).values[:, mask]
+    zb_full = ds[var_map["ZB"]].transpose(time_dim, m_dim, n_dim).values[:, mask]
+    Y = zb_full[1:] - zb_full[:-1]
+    X = X[:-1]
 
     # -------------------------------------------------------------------------
     # Save Outputs
@@ -373,11 +446,11 @@ def main():
     np.savez_compressed(outdir / "features.npz", X=X, Y=Y)
 
     meta = {
-        "T": int(T),
+        "T": int(X.shape[0]),
         "N": int(N),
         "F": int(F),
-        "features": list(var_map.keys()),
-        "note": "For 1-step training use X[t] → Y[t+1]"
+        "features": feature_names,
+        "note": "Y[t] = ZB[t+1] - ZB[t] (bed level change). Positive = deposition, negative = erosion."
     }
 
     with open(outdir / "meta.json", "w") as f:
