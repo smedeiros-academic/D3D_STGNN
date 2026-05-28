@@ -163,8 +163,6 @@ def maybe_convert_nefis(trim_dat: Path, out_nc: Path) -> Path:
 
     return out_nc
 
-
-
 def resolve_input_to_netcdf(input_path: Path, outdir: Path, allow_convert: bool) -> Path:
     """
     Resolve --input into a readable dataset for xarray.
@@ -462,4 +460,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
