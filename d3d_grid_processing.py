@@ -82,14 +82,16 @@ Delft3D variable naming varies across:
 We define canonical names and map aliases to improve robustness.
 """
 
-CANONICAL_VARS = ["ZB", "S1", "U1", "V1", "TAUB"]
+CANONICAL_VARS = ["ZB", "S1", "U1", "V1", "TAUB", "TAUKSI", "TAUETA"]
 
 VAR_ALIASES: Dict[str, List[str]] = {
-    "ZB":   ["ZB", "zb", "bedlevel", "bed_level", "BedLevel"],
-    "S1":   ["S1", "s1", "waterlevel", "WaterLevel", "eta"],
-    "U1":   ["U1", "u1", "U", "ucx"],
-    "V1":   ["V1", "v1", "V", "ucy"],
-    "TAUB": ["TAUB", "taub", "tau_b", "TAU"],
+    "ZB":     ["ZB", "zb", "bedlevel", "bed_level", "BedLevel"],
+    "S1":     ["S1", "s1", "waterlevel", "WaterLevel", "eta"],
+    "U1":     ["U1", "u1", "U", "ucx"],
+    "V1":     ["V1", "v1", "V", "ucy"],
+    "TAUB": ["TAUMAX", "taumax", "TAUB", "taub", "tau_b", "TAU"],
+    "TAUKSI": ["TAUKSI", "tauksi", "tau_ksi", "TAUX", "taux"],
+    "TAUETA": ["TAUETA", "taueta", "tau_eta", "TAUY", "tauy"],
 }
 
 
@@ -416,7 +418,9 @@ def main():
 
     T = ds.dims[time_dim]
     N = node_index.shape[0]
-    F = len(var_map)
+
+    feature_names = list(var_map.keys())
+    F = len(feature_names)
 
     dtype = np.float32 if args.float32 else np.float64
     X = np.empty((T, N, F), dtype=dtype)
@@ -429,7 +433,9 @@ def main():
         arr = da.values
         X[:,:,f_idx] = arr[:, mask]
 
-    Y = ds[var_map["ZB"]].transpose(time_dim, m_dim, n_dim).values[:, mask]
+    zb_full = ds[var_map["ZB"]].transpose(time_dim, m_dim, n_dim).values[:, mask]
+    Y = zb_full[1:] - zb_full[:-1]
+    X = X[:-1]
 
     # -------------------------------------------------------------------------
     # Save Outputs
@@ -438,11 +444,11 @@ def main():
     np.savez_compressed(outdir / "features.npz", X=X, Y=Y)
 
     meta = {
-        "T": int(T),
+        "T": int(X.shape[0]),
         "N": int(N),
         "F": int(F),
-        "features": list(var_map.keys()),
-        "note": "For 1-step training use X[t] → Y[t+1]"
+        "features": feature_names,
+        "note": "Y[t] = ZB[t+1] - ZB[t] (bed level change). Positive = deposition, negative = erosion."
     }
 
     with open(outdir / "meta.json", "w") as f:
