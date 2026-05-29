@@ -6,7 +6,7 @@ dependencies:
   - pip
 
   # Scientific + IO
-  - numpy>=1.26,<2
+  - numpy>=1.26,<2.0
   - scipy>=1.11,<1.13
   - pandas>=2.1,<2.3
   - xarray>=2024.1,<2025.0
@@ -17,12 +17,15 @@ dependencies:
   - numcodecs>=0.12,<0.13
 
   # utilities
+  - ipython>=8.20,<9
   - tqdm>=4.66,<5
   - rich>=13.7,<14
   - matplotlib>=3.8,<3.9
 
-  # PyTorch baseline; install PyTorch Geometric separately to match this version.
+  # PyTorch baseline and PyTorch Geometric.
+  # Keep NumPy below 2.0 for compatibility with the PyTorch 2.2 wheels.
   - pip:
       - torch==2.2.*
       - torchvision==0.17.*
       - torchaudio==2.2.*
+      - torch-geometric==2.5.*

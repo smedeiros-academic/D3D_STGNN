@@ -68,21 +68,18 @@ conda env create -f environment.yml
 conda activate d3d-stgnn
 ```
 
-### 2. Install PyTorch Geometric
+### 2. Verify PyTorch Geometric
 
-`environment.yml` pins a conservative dependency baseline for reproducibility. It installs PyTorch, but PyTorch Geometric is installed separately.
+`environment.yml` pins a conservative dependency baseline for reproducibility. It keeps NumPy below 2.0 because the PyTorch 2.2 wheels are built against the NumPy 1.x ABI, and it installs PyTorch Geometric with the PyTorch baseline.
 
-Example CPU-only installation:
+If you are repairing an existing environment that has drifted, reinstall the compatible NumPy and PyG packages:
 
 ```bash
-pip install torch-scatter -f https://data.pyg.org/whl/torch-2.2.0+cpu.html
-pip install torch-sparse -f https://data.pyg.org/whl/torch-2.2.0+cpu.html
-pip install torch-cluster -f https://data.pyg.org/whl/torch-2.2.0+cpu.html
-pip install torch-spline-conv -f https://data.pyg.org/whl/torch-2.2.0+cpu.html
-pip install torch-geometric
+conda install "numpy>=1.26,<2.0" ipython
+pip install "torch-geometric==2.5.*"
 ```
 
-Adjust wheel URLs as needed to match your installed PyTorch version and platform.
+Optional PyG extension wheels such as `torch-scatter` and `torch-sparse` can be added later if a model needs them. Match those wheels to the installed PyTorch version and platform.
 
 ## Sanity Check
 
