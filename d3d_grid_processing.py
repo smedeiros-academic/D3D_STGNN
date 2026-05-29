@@ -58,7 +58,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
+import shlex
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -95,6 +96,70 @@ VAR_ALIASES: Dict[str, List[str]] = {
 # =============================================================================
 # Utility Functions
 # =============================================================================
+
+def maybe_convert_nefis(trim_dat: Path, out_nc: Path) -> Path:
+    """
+    Convert a Delft3D NEFIS trim file to NetCDF using an external converter.
+
+    The conversion step is intentionally explicit because converter availability
+    differs across Delft3D installations. This helper supports two modes:
+
+    1. Set D3D_NEFIS_CONVERTER to a command prefix that accepts:
+           <input_trim.dat> <output.nc>
+       Example:
+           export D3D_NEFIS_CONVERTER="python tools/convert_nefis.py"
+
+    2. Install a converter executable named one of:
+           d3d-nefis-to-netcdf
+           vs_trim2nc
+           trim2nc
+
+    Returns:
+        Path to the converted NetCDF file.
+    """
+    trim_dat = trim_dat.expanduser().resolve()
+    out_nc = out_nc.expanduser().resolve()
+    def_file = trim_dat.with_suffix(".def")
+
+    if not trim_dat.exists():
+        raise SystemExit(f"NEFIS data file not found: {trim_dat}")
+    if not def_file.exists():
+        raise SystemExit(
+            f"NEFIS definition file not found for {trim_dat.name}: expected {def_file.name}"
+        )
+    if out_nc.exists():
+        return out_nc
+
+    converter_cmd = os.environ.get("D3D_NEFIS_CONVERTER")
+    if converter_cmd:
+        cmd = shlex.split(converter_cmd) + [str(trim_dat), str(out_nc)]
+    else:
+        candidates = ["d3d-nefis-to-netcdf", "vs_trim2nc", "trim2nc"]
+        executable = next((name for name in candidates if shutil.which(name)), None)
+        if executable is None:
+            raise SystemExit(
+                "NEFIS conversion was requested, but no converter is configured. "
+                "Set D3D_NEFIS_CONVERTER to a converter command or install one of: "
+                f"{', '.join(candidates)}"
+            )
+        cmd = [executable, str(trim_dat), str(out_nc)]
+
+    print(f"Converting NEFIS to NetCDF: {' '.join(cmd)}")
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        stderr = result.stderr.strip() or "(no stderr output)"
+        raise SystemExit(
+            "NEFIS conversion failed.\n"
+            f"Command: {' '.join(cmd)}\n"
+            f"stderr: {stderr}"
+        )
+    if not out_nc.exists():
+        raise SystemExit(
+            "NEFIS converter reported success, but the expected NetCDF output was not created: "
+            f"{out_nc}"
+        )
+
+    return out_nc
 
 def resolve_input_to_netcdf(input_path: Path, outdir: Path, allow_convert: bool) -> Path:
     """
@@ -389,4 +454,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

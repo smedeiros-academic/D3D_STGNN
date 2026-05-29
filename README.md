@@ -26,7 +26,7 @@ It is not currently a full end-to-end ST-GNN training package.
   Convenience wrapper for running the PyG sanity check without plotting.
 
 - `environment.yml`
-  Conda environment specification for Python, scientific IO, plotting, and PyTorch.
+  Conda environment specification for Python, scientific IO, plotting, and a pinned PyTorch baseline.
 
 - `test_bed_elevations.mp4`
   Example animation exported from the notebook.
@@ -68,21 +68,18 @@ conda env create -f environment.yml
 conda activate d3d-stgnn
 ```
 
-### 2. Install PyTorch Geometric
+### 2. Verify PyTorch Geometric
 
-`environment.yml` installs PyTorch, but PyTorch Geometric is installed separately.
+`environment.yml` pins a conservative dependency baseline for reproducibility. It keeps NumPy below 2.0 because the PyTorch 2.2 wheels are built against the NumPy 1.x ABI, and it installs PyTorch Geometric with the PyTorch baseline.
 
-Example CPU-only installation:
+If you are repairing an existing environment that has drifted, reinstall the compatible NumPy and PyG packages:
 
 ```bash
-pip install torch-scatter -f https://data.pyg.org/whl/torch-2.2.0+cpu.html
-pip install torch-sparse -f https://data.pyg.org/whl/torch-2.2.0+cpu.html
-pip install torch-cluster -f https://data.pyg.org/whl/torch-2.2.0+cpu.html
-pip install torch-spline-conv -f https://data.pyg.org/whl/torch-2.2.0+cpu.html
-pip install torch-geometric
+conda install "numpy>=1.26,<2.0" ipython
+pip install "torch-geometric==2.5.*"
 ```
 
-Adjust wheel URLs as needed to match your installed PyTorch version and platform.
+Optional PyG extension wheels such as `torch-scatter` and `torch-sparse` can be added later if a model needs them. Match those wheels to the installed PyTorch version and platform.
 
 ## Sanity Check
 
@@ -130,6 +127,24 @@ The script accepts:
 - a directory containing Delft3D outputs;
 - a NEFIS `.dat` file when `--convert` is enabled.
 
+For NEFIS conversion, configure an external converter command that accepts:
+
+```bash
+<input_trim.dat> <output.nc>
+```
+
+The script supports either:
+
+```bash
+export D3D_NEFIS_CONVERTER="python tools/convert_nefis.py"
+```
+
+or an installed executable named one of:
+
+- `d3d-nefis-to-netcdf`
+- `vs_trim2nc`
+- `trim2nc`
+
 ## Running the Notebook
 
 Install a Jupyter kernel if needed:
@@ -157,9 +172,10 @@ Current notebook contents:
 
 - The repository includes graph-ready preprocessing, but does not currently contain a completed ST-GNN training pipeline.
 - The notebook is a synthetic-data prototype, not a production training workflow on real Delft3D outputs.
+- The notebook is intentionally checked in without cell outputs so the repository stays lightweight and reviewable.
 - `d3d_grid_processing.py` assumes a structured 2D grid and uses heuristic variable-name matching.
 - If velocity variables are staggered in the source model output, interpolation to cell centers may still be needed before model training.
-- NEFIS conversion is optional and depends on external tooling being available.
+- NEFIS conversion is optional and depends on external tooling being available and configured.
 
 ## Citation
 
