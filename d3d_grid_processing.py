@@ -11,7 +11,7 @@ and package them into machine-learning-ready tensors suitable for training
 a Spatiotemporal Graph Neural Network (ST-GNN).
 
 Primary Variables Extracted (if available):
-    - ZB    : Bed level
+    - ZDPS  : Morphological Bed level
     - S1    : Water level
     - U1    : Depth-averaged x-velocity
     - V1    : Depth-averaged y-velocity
@@ -27,7 +27,7 @@ The script produces:
    F = number of features (variables extracted)
 
 2) Y tensor: shape (T, N)
-   Contains bed level (ZB). For one-step prediction:
+   Contains bed level (ZDPS). For one-step prediction:
        X[t] → Y[t+1]
 
 3) edge_index.npy:
@@ -82,14 +82,16 @@ Delft3D variable naming varies across:
 We define canonical names and map aliases to improve robustness.
 """
 
-CANONICAL_VARS = ["ZB", "S1", "U1", "V1", "TAUB"]
+CANONICAL_VARS = ["ZDPS", "S1", "U1", "V1", "TAUB"]
 
 VAR_ALIASES: Dict[str, List[str]] = {
-    "ZB":   ["ZB", "zb", "bedlevel", "bed_level", "BedLevel"],
-    "S1":   ["S1", "s1", "waterlevel", "WaterLevel", "eta"],
-    "U1":   ["U1", "u1", "U", "ucx"],
-    "V1":   ["V1", "v1", "V", "ucy"],
-    "TAUB": ["TAUB", "taub", "tau_b", "TAU"],
+    "ZDPS":   ["ZDPS", "zdps", "bedlevel", "bed_level", "BedLevel"],
+    "S1":     ["S1", "s1", "waterlevel", "WaterLevel", "eta"],
+    "U1":     ["U1", "u1", "U", "ucx"],
+    "V1":     ["V1", "v1", "V", "ucy"],
+    "TAUB": ["TAUMAX", "taumax", "TAUB", "taub", "tau_b", "TAU"],
+    "TAUKSI": ["TAUKSI", "tauksi", "tau_ksi", "TAUX", "taux"],
+    "TAUETA": ["TAUETA", "taueta", "tau_eta", "TAUY", "tauy"],
 }
 
 
@@ -277,7 +279,7 @@ def detect_mn_dims(da: xr.DataArray, time_dim: str) -> Tuple[str, str]:
     return dims[0], dims[1]
 
 
-def build_valid_mask(zb_da: xr.DataArray, time_dim: str) -> np.ndarray:
+def build_valid_mask(zdps_da: xr.DataArray, time_dim: str) -> np.ndarray:
     """
     Construct boolean mask of valid computational cells.
 
@@ -288,9 +290,9 @@ def build_valid_mask(zb_da: xr.DataArray, time_dim: str) -> np.ndarray:
     Returns:
         2D boolean mask (m,n)
     """
-    zb0 = zb_da.isel({time_dim: 0})
-    mask0 = np.isfinite(zb0.values)
-    any_valid = np.isfinite(zb_da).any(dim=time_dim).values
+    zdps0 = zdps_da.isel({time_dim: 0})
+    mask0 = np.isfinite(zdps0.values)
+    any_valid = np.isfinite(zdps_da).any(dim=time_dim).values
     return mask0 & any_valid
 
 
@@ -379,16 +381,16 @@ def main():
         else:
             print(f"Warning: {v} not found.")
 
-    if "ZB" not in var_map:
-        raise RuntimeError("ZB required for masking and targets.")
+    if "ZDPS" not in var_map:
+        raise RuntimeError("ZDPS required for masking and targets.")
 
     # -------------------------------------------------------------------------
     # Dimension Detection
     # -------------------------------------------------------------------------
 
-    zb = ds[var_map["ZB"]]
-    time_dim = detect_time_dim(zb)
-    m_dim, n_dim = detect_mn_dims(zb, time_dim)
+    zdps = ds[var_map["ZDPS"]]
+    time_dim = detect_time_dim(zdps)
+    m_dim, n_dim = detect_mn_dims(zdps, time_dim)
 
     print(f"Detected dimensions: time={time_dim}, m={m_dim}, n={n_dim}")
 
@@ -402,8 +404,8 @@ def main():
     # Mask Construction
     # -------------------------------------------------------------------------
 
-    zb = ds[var_map["ZB"]]
-    mask = build_valid_mask(zb, time_dim)
+    zdps = ds[var_map["ZDPS"]]
+    mask = build_valid_mask(zdps, time_dim)
     edge_index, node_index = build_edge_index(mask)
 
     # Save graph structure
@@ -429,7 +431,9 @@ def main():
         arr = da.values
         X[:,:,f_idx] = arr[:, mask]
 
-    Y = ds[var_map["ZB"]].transpose(time_dim, m_dim, n_dim).values[:, mask]
+    zdps_full = ds[var_map["ZDPS"]].transpose(time_dim, m_dim, n_dim).values[:, mask]
+    Y = zdps_full[1:] - zdps_full[:-1]
+    X = X[:-1]
 
     # -------------------------------------------------------------------------
     # Save Outputs
@@ -441,8 +445,8 @@ def main():
         "T": int(T),
         "N": int(N),
         "F": int(F),
-        "features": list(var_map.keys()),
-        "note": "For 1-step training use X[t] → Y[t+1]"
+        "features": feature_names,
+        "note": "Y[t] = ZDPS[t+1] - ZDPS[t] (bed level change). Positive = deposition, negative = erosion."
     }
 
     with open(outdir / "meta.json", "w") as f:
