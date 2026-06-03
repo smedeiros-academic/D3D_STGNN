@@ -90,8 +90,6 @@ VAR_ALIASES: Dict[str, List[str]] = {
     "U1":     ["U1", "u1", "U", "ucx"],
     "V1":     ["V1", "v1", "V", "ucy"],
     "TAUB": ["TAUMAX", "taumax", "TAUB", "taub", "tau_b", "TAU"],
-    "TAUKSI": ["TAUKSI", "tauksi", "tau_ksi", "TAUX", "taux"],
-    "TAUETA": ["TAUETA", "taueta", "tau_eta", "TAUY", "tauy"],
 }
 
 
