@@ -11,7 +11,7 @@ and package them into machine-learning-ready tensors suitable for training
 a Spatiotemporal Graph Neural Network (ST-GNN).
 
 Primary Variables Extracted (if available):
-    - ZB    : Bed level
+    - DPS  : Bed level
     - S1    : Water level
     - U1    : Depth-averaged x-velocity
     - V1    : Depth-averaged y-velocity
@@ -27,7 +27,7 @@ The script produces:
    F = number of features (variables extracted)
 
 2) Y tensor: shape (T, N)
-   Contains bed level (ZB). For one-step prediction:
+   Contains bed level (DPS). For one-step prediction:
        X[t] → Y[t+1]
 
 3) edge_index.npy:
@@ -67,7 +67,6 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import xarray as xr
 
-
 # =============================================================================
 # Variable Canonicalization
 # =============================================================================
@@ -82,16 +81,16 @@ Delft3D variable naming varies across:
 We define canonical names and map aliases to improve robustness.
 """
 
-CANONICAL_VARS = ["ZB", "S1", "U1", "V1", "TAUB", "TAUKSI", "TAUETA"]
+CANONICAL_VARS = ["DPS", "S1", "U1", "V1", "TAUB","TAUKSI","TAUETA"]
 
 VAR_ALIASES: Dict[str, List[str]] = {
-    "ZB":     ["ZB", "zb", "bedlevel", "bed_level", "BedLevel"],
-    "S1":     ["S1", "s1", "waterlevel", "WaterLevel", "eta"],
-    "U1":     ["U1", "u1", "U", "ucx"],
-    "V1":     ["V1", "v1", "V", "ucy"],
-    "TAUB": ["TAUMAX", "taumax", "TAUB", "taub", "tau_b", "TAU"],
-    "TAUKSI": ["TAUKSI", "tauksi", "tau_ksi", "TAUX", "taux"],
-    "TAUETA": ["TAUETA", "taueta", "tau_eta", "TAUY", "tauy"],
+    "DPS":   ["DPS", "dps"],
+    "S1":     ["S1", "s1", "waterlevel", "WaterLevel"],
+    "U1":     ["U1", "u1","velocity_x"],
+    "V1":     ["V1", "v1","velocity_y"],
+    "TAUB": ["TAUMAX", "taumax", "TAUB", "taub", "tau_max"],
+    "TAUKSI": ["TAUKSI", "tauksi", "tau_ksi", "TAUX", "tau_x"],
+    "TAUETA": ["TAUETA", "taueta", "tau_eta", "TAUY", "tau_y"],
 }
 
 
@@ -247,6 +246,7 @@ def find_var(ds: xr.Dataset, canonical: str) -> Optional[str]:
     return None
 
 
+
 def detect_time_dim(da: xr.DataArray) -> Optional[str]:
     """
     Attempt to automatically detect time dimension.
@@ -279,7 +279,7 @@ def detect_mn_dims(da: xr.DataArray, time_dim: str) -> Tuple[str, str]:
     return dims[0], dims[1]
 
 
-def build_valid_mask(zb_da: xr.DataArray, time_dim: str) -> np.ndarray:
+def build_valid_mask(dps_da: xr.DataArray, time_dim: str) -> np.ndarray:
     """
     Construct boolean mask of valid computational cells.
 
@@ -290,9 +290,9 @@ def build_valid_mask(zb_da: xr.DataArray, time_dim: str) -> np.ndarray:
     Returns:
         2D boolean mask (m,n)
     """
-    zb0 = zb_da.isel({time_dim: 0})
-    mask0 = np.isfinite(zb0.values)
-    any_valid = np.isfinite(zb_da).any(dim=time_dim).values
+    dps0 = dps_da.isel({time_dim: 0})
+    mask0 = np.isfinite(dps0.values)
+    any_valid = np.isfinite(dps_da).any(dim=time_dim).values
     return mask0 & any_valid
 
 
@@ -381,16 +381,16 @@ def main():
         else:
             print(f"Warning: {v} not found.")
 
-    if "ZB" not in var_map:
-        raise RuntimeError("ZB required for masking and targets.")
+    if "DPS" not in var_map:
+        raise RuntimeError("DPS required for masking and targets.")
 
     # -------------------------------------------------------------------------
     # Dimension Detection
     # -------------------------------------------------------------------------
 
-    zb = ds[var_map["ZB"]]
-    time_dim = detect_time_dim(zb)
-    m_dim, n_dim = detect_mn_dims(zb, time_dim)
+    dps = ds[var_map["DPS"]]
+    time_dim = detect_time_dim(dps)
+    m_dim, n_dim = detect_mn_dims(dps, time_dim)
 
     print(f"Detected dimensions: time={time_dim}, m={m_dim}, n={n_dim}")
 
@@ -404,8 +404,8 @@ def main():
     # Mask Construction
     # -------------------------------------------------------------------------
 
-    zb = ds[var_map["ZB"]]
-    mask = build_valid_mask(zb, time_dim)
+    dps = ds[var_map["DPS"]]
+    mask = build_valid_mask(dps, time_dim)
     edge_index, node_index = build_edge_index(mask)
 
     # Save graph structure
@@ -416,7 +416,7 @@ def main():
     # Feature Tensor Assembly
     # -------------------------------------------------------------------------
 
-    T = ds.dims[time_dim]
+    T = ds.sizes[time_dim]
     N = node_index.shape[0]
 
     feature_names = list(var_map.keys())
@@ -428,13 +428,21 @@ def main():
     print("Extracting features...")
 
     for f_idx, (canon, actual) in enumerate(var_map.items()):
-        da = ds[actual]
-        da = da.transpose(time_dim, m_dim, n_dim)
-        arr = da.values
-        X[:,:,f_idx] = arr[:, mask]
 
-    zb_full = ds[var_map["ZB"]].transpose(time_dim, m_dim, n_dim).values[:, mask]
-    Y = zb_full[1:] - zb_full[:-1]
+        da = ds[actual]
+        # Remove singleton dimensions (e.g., Layer)
+        for dim in list(da.dims):
+            if dim not in (time_dim, m_dim, n_dim) and da.sizes[dim] == 1:
+                da = da.squeeze(dim)
+
+        # Ensure consistent dimension ordering
+        da = da.transpose(time_dim, m_dim, n_dim)
+
+        arr = da.values
+        X[:, :, f_idx] = arr[:, mask]
+
+    dps_full = ds[var_map["DPS"]].transpose(time_dim, m_dim, n_dim).values[:, mask]
+    Y = dps_full[1:] - dps_full[:-1]
     X = X[:-1]
 
     # -------------------------------------------------------------------------
@@ -448,7 +456,7 @@ def main():
         "N": int(N),
         "F": int(F),
         "features": feature_names,
-        "note": "Y[t] = ZB[t+1] - ZB[t] (bed level change). Positive = deposition, negative = erosion."
+        "note": "Y[t] = DPS[t+1] - DPS[t] (bed level change). Positive = erosion, negative = deposition."
     }
 
     with open(outdir / "meta.json", "w") as f:
