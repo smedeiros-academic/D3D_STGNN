@@ -7,6 +7,8 @@ Any model with signature:
     forward(x: Tensor[N, F], edge_index: Tensor[2, E]) -> Tensor[N]
 can be passed to `train()`.
 
+Recurrent models (GConvGRUModel, which returns (pred, h1, h2)) train via the
+dedicated loop in train_gconvgru.py instead.
 """
 
 import json
